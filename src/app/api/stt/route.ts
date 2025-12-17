@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-// اصلاح مهم: استفاده از Model با حرف بزرگ
-import { Model, Recognizer } from 'vosk';
+import OpenAI from 'openai'; // از پکیج OpenAI برای وصل شدن به Groq استفاده می‌کنیم
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 
@@ -11,87 +10,69 @@ if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
 }
 
-// مسیر مدل فارسی
-const MODEL_PATH = path.join(process.cwd(), 'model');
-
-// متغیر گلوبال برای نگهداری مدل (جهت جلوگیری از لود شدن مجدد در هر درخواست)
-let globalModel: Model | null = null;
-
 export async function POST(req: Request) {
   try {
-    // 1. بررسی وجود پوشه مدل
-    if (!fs.existsSync(MODEL_PATH)) {
-        console.error("❌ پوشه مدل یافت نشد:", MODEL_PATH);
-        return NextResponse.json({ 
-            text: "خطا: مدل فارسی پیدا نشد. لطفا پوشه model را در ریشه پروژه قرار دهید." 
-        }, { status: 500 });
+    // دریافت کلید از محیط رندر
+    const apiKey = process.env.GROQ_API_KEY;
+    
+    if (!apiKey) {
+        return NextResponse.json({ error: "API Key یافت نشد" }, { status: 500 });
     }
 
-    // 2. لود کردن مدل (فقط یکبار)
-    if (!globalModel) {
-        console.log("🔄 در حال بارگذاری مدل Vosk در حافظه...");
-        // تنظیم سطح لاگ برای جلوگیری از شلوغی ترمینال
-        try {
-            globalModel = new Model(MODEL_PATH); 
-            // اگر متد setLogLevel روی کلاس Model استاتیک باشد یا روی instance:
-            // در نسخه‌های جدید معمولاً نیازی به setLogLevel نیست یا به روش دیگری است
-        } catch (e) {
-            console.error("خطا در لود مدل:", e);
-            return NextResponse.json({ error: "خطا در لود مدل زبان" }, { status: 500 });
-        }
-    }
+    // تنظیم کلاینت Groq (با استفاده از SDK استاندارد OpenAI)
+    const groq = new OpenAI({
+        apiKey: apiKey,
+        baseURL: "https://api.groq.com/openai/v1"
+    });
 
-    // 3. دریافت فایل
     const formData = await req.formData();
     const file = formData.get('audio') as Blob;
+    
     if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 });
 
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // تعریف مسیر فایل‌های موقت
-    const tempInput = path.join(process.cwd(), `temp_in_${Date.now()}.webm`);
-    const tempOutput = path.join(process.cwd(), `temp_out_${Date.now()}.wav`);
+    // مسیر فایل‌های موقت
+    const tempInput = path.join(process.cwd(), `input_${Date.now()}.webm`);
+    const tempOutput = path.join(process.cwd(), `output_${Date.now()}.mp3`);
     
     // ذخیره فایل ورودی
     fs.writeFileSync(tempInput, buffer);
 
-    console.log("⚙️ در حال تبدیل فرمت فایل صوتی...");
+    console.log("🚀 در حال آماده‌سازی صدا برای ارسال به Groq...");
 
-    // 4. تبدیل فرمت با FFmpeg به فرمت دقیق مورد نیاز Vosk
+    // تبدیل به MP3 (چون حجمش کمتره و آپلود سریع‌تر انجام میشه)
     await new Promise((resolve, reject) => {
         ffmpeg(tempInput)
-            .toFormat('wav')
-            .audioChannels(1)          // مونو
-            .audioFrequency(16000)     // 16 کیلوهرتز
+            .toFormat('mp3')
             .on('end', resolve)
             .on('error', (err) => reject(err))
             .save(tempOutput);
     });
 
-    // 5. پردازش با Vosk
-    const rec = new Recognizer({ model: globalModel, sampleRate: 16000 });
-    
-    const wavBuffer = fs.readFileSync(tempOutput);
-    rec.acceptWaveform(wavBuffer);
-    
-    const result = rec.finalResult();
-    rec.free();
+    // ارسال به Groq (مدل Whisper Large V3)
+    const transcription = await groq.audio.transcriptions.create({
+      file: fs.createReadStream(tempOutput),
+      model: "whisper-large-v3", // قوی‌ترین مدل موجود
+      language: "fa", // زبان فارسی
+      response_format: "json",
+    });
 
-    // 6. پاکسازی
+    // پاکسازی فایل‌ها
     try {
         if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
         if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error("Cleanup error", e); }
 
-    console.log("✅ نتیجه:", result.text);
+    console.log("✅ نتیجه Groq:", transcription.text);
 
     return NextResponse.json({ 
-        text: result.text || "",
-        mode: "server-vosk-offline"
+        text: transcription.text,
+        mode: "groq-whisper-large"
     });
 
   } catch (error: any) {
-    console.error('Processing Error:', error);
+    console.error('Groq Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
