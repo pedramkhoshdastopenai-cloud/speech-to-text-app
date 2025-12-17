@@ -30,16 +30,15 @@ export async function POST(req: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // اصلاح ۱: فایل ورودی را بدون پسوند ذخیره می‌کنیم تا FFmpeg خودش هدر فایل را بخواند
-    // این کار مشکل فرمت m4a آیفون را حل می‌کند
+    // ذخیره فایل بدون پسوند برای تشخیص خودکار فرمت توسط FFmpeg
     const tempInput = path.join(process.cwd(), `input_${Date.now()}`); 
     const tempOutput = path.join(process.cwd(), `output_${Date.now()}.mp3`);
     
     fs.writeFileSync(tempInput, buffer);
 
-    console.log("🚀 در حال تبدیل فرمت هوشمند...");
+    console.log("🚀 در حال پردازش صدا...");
 
-    // تبدیل به MP3 استاندارد
+    // تبدیل به MP3
     await new Promise((resolve, reject) => {
         ffmpeg(tempInput)
             .toFormat('mp3')
@@ -48,13 +47,12 @@ export async function POST(req: Request) {
             .save(tempOutput);
     });
 
-    // اصلاح ۲: اضافه کردن پرامپت برای افزایش دقت و اصلاح جمله‌بندی
+    // ارسال به هوش مصنوعی با پرامپت اصلاح شده
     const transcription = await groq.audio.transcriptions.create({
       file: fs.createReadStream(tempOutput),
       model: "whisper-large-v3",
-      language: "fa", // زبان فارسی
+      language: "fa",
       response_format: "json",
-      // این خط جادو می‌کند! به هوش مصنوعی زمینه می‌دهد:
       prompt: "متن گفتار محاوره‌ای فارسی است. لطفاً آن را به صورت سلیس، با علائم نگارشی صحیح و نیم‌فاصله‌های درست تایپ کن."
     });
 
@@ -64,15 +62,12 @@ export async function POST(req: Request) {
         if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
     } catch (e) { console.error("Cleanup error", e); }
 
-    console.log("✅ نتیجه:", transcription.text);
-
-    // اصلاح ۳: اضافه کردن ایموجی برای تشخیص منبع
-    // اگر درخواست از شورتکات بیاید این ایموجی را می‌بینید
-    const finalText = transcription.text ? `🤖 ${transcription.text}` : "";
+    // حذف ایموجی و ارسال متن خالص
+    const finalText = transcription.text || "";
 
     return NextResponse.json({ 
         text: finalText,
-        mode: "groq-whisper-optimized"
+        mode: "groq-whisper-final"
     });
 
   } catch (error: any) {
