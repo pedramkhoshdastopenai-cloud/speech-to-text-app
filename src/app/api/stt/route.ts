@@ -15,29 +15,28 @@ export async function POST(req: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // مسیردهی فایل موقت
     const uniqueId = Date.now();
-    const tempDir = '/tmp'; // در Docker و Render پوشه tmp بهترین جاست
+    const tempDir = '/tmp'; 
     const tempFilePath = path.join(tempDir, `audio_${uniqueId}.mp3`);
     
+    // نوشتن فایل دریافتی در پوشه موقت
     fs.writeFileSync(tempFilePath, buffer);
 
-    console.log("🚀 Executing Python Engine...");
+    console.log("🚀 Running Python Microservice for iPhone/Google processing...");
 
-    // اجرای اسکریپت پایتون
-    // python3 stt_engine.py /tmp/audio_123.mp3
+    // اجرای موتور پایتونی که قبلاً نوشتیم
+    // این اسکریپت خروجی را به صورت JSON در stdout چاپ می‌کند
     const { stdout, stderr } = await execPromise(`python3 stt_engine.py "${tempFilePath}"`);
 
-    // پاک کردن فایل اصلی
+    // پاک کردن فایل موقت
     if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
 
     if (stderr) {
         console.error("Python Stderr:", stderr);
     }
 
-    console.log("🐍 Python Output:", stdout);
+    console.log("🐍 Python Microservice Output:", stdout);
 
-    // تبدیل خروجی JSON پایتون به آبجکت جاوااسکریپت
     try {
         const result = JSON.parse(stdout.trim());
         
@@ -45,13 +44,14 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: result.error }, { status: 500 });
         }
         
+        // برگرداندن متن استخراج شده توسط گوگل (از طریق پایتون) به کلاینت
         return NextResponse.json({ 
             text: result.text,
             mode: "google-embedded-python"
         });
         
     } catch (e) {
-        return NextResponse.json({ error: "خطا در پردازش خروجی پایتون" }, { status: 500 });
+        return NextResponse.json({ error: "خطا در پردازش خروجی موتور پایتون" }, { status: 500 });
     }
 
   } catch (error: any) {
