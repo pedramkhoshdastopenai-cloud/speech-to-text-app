@@ -75,7 +75,7 @@ export async function POST(req: Request) {
             { role: "system", content: systemPrompt },
             { role: "user", content: rawText }
         ],
-        model: "llama3-70b-8192", 
+        model: "llama-3.3-70b-versatile",
         temperature: 0, // دمای صفر: یعنی هیچ خلاقیتی به خرج نده! (مهم‌ترین نکته)
     });
 
