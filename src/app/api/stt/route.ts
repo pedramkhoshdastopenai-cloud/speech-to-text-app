@@ -30,13 +30,11 @@ export async function POST(req: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // ذخیره فایل بدون پسوند برای تشخیص خودکار فرمت توسط FFmpeg
+    // ذخیره بدون پسوند برای تشخیص هوشمند فرمت
     const tempInput = path.join(process.cwd(), `input_${Date.now()}`); 
     const tempOutput = path.join(process.cwd(), `output_${Date.now()}.mp3`);
     
     fs.writeFileSync(tempInput, buffer);
-
-    console.log("🚀 در حال پردازش صدا...");
 
     // تبدیل به MP3
     await new Promise((resolve, reject) => {
@@ -47,27 +45,24 @@ export async function POST(req: Request) {
             .save(tempOutput);
     });
 
-    // ارسال به هوش مصنوعی با پرامپت اصلاح شده
+    // ارسال به Groq با پرامپت عمومی و استاندارد
     const transcription = await groq.audio.transcriptions.create({
       file: fs.createReadStream(tempOutput),
       model: "whisper-large-v3",
       language: "fa",
       response_format: "json",
-      prompt: "متن گفتار محاوره‌ای فارسی است. لطفاً آن را به صورت سلیس، با علائم نگارشی صحیح و نیم‌فاصله‌های درست تایپ کن."
+      // 👇 این همان پرامپت طلایی برای استفاده عمومی است 👇
+      prompt: "این متن، یک گفتگوی فارسی روان است که در آن واژگان انگلیسی (مثل ID, App, OK) با املای لاتین و کلمات فارسی با رعایت دقیق نیم‌فاصله (مانند «می‌شود» و «آن‌ها») و علائم نگارشی صحیح نوشته شده‌اند."
     });
 
-    // پاکسازی فایل‌ها
     try {
         if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
         if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
-    } catch (e) { console.error("Cleanup error", e); }
-
-    // حذف ایموجی و ارسال متن خالص
-    const finalText = transcription.text || "";
+    } catch (e) { /* ignore */ }
 
     return NextResponse.json({ 
-        text: finalText,
-        mode: "groq-whisper-final"
+        text: transcription.text || "",
+        mode: "groq-whisper-general"
     });
 
   } catch (error: any) {
