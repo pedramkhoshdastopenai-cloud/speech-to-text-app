@@ -1,45 +1,29 @@
-# استفاده از نسخه پایدار نود
 FROM node:18-slim
 
-# نصب پایتون و ابزارهای مورد نیاز سیستم
+# ۱. نصب پایتون و ابزار FFmpeg به صورت سیستمی (بسیار حیاتی)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
-    python3-dev \
-    make \
-    g++ \
-    build-essential \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# تعیین دایرکتوری کاری
 WORKDIR /app
 
-# کپی فایل‌های پکیج نود
+# ۲. نصب وابستگی‌های Node.js
 COPY package*.json ./
-
-# نصب پکیج‌های نود (بدون vosk)
 RUN npm install
 
-# نصب کتابخانه‌های پایتون مورد نیاز اسکریپت stt_engine.py
-# نصب speech_recognition و کتابخانه گوگل
-RUN pip3 install --no-cache-dir \
-    speechrecognition \
-    google-cloud-speech \
-    --break-system-packages || \
-    pip3 install --no-cache-dir \
-    speechrecognition \
-    google-cloud-speech
+# ۳. نصب فقط کتابخانه اصلی تشخیص صدا در پایتون
+RUN pip3 install --no-cache-dir speechrecognition --break-system-packages || \
+    pip3 install --no-cache-dir speechrecognition
 
-# کپی کل پروژه (شامل stt_engine.py)
 COPY . .
 
-# بیلد کردن پروژه نکس‌جی‌اس
+# ۴. بیلد پروژه
 RUN npm run build
 
-# تنظیم پورت
+# ۵. تنظیمات پورت Render
 ENV PORT=10000
 EXPOSE 10000
 
-# دستور شروع به کار
 CMD ["npm", "start"]
