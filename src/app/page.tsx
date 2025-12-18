@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Mic, MicOff, Copy, Check, Globe, Cloud, HelpCircle, Loader2, Smartphone, Monitor, Apple, Moon, Sun, ChevronRight } from 'lucide-react' // اطمینان از وارد کردن Sun و Moon
+import { Mic, MicOff, Copy, Check, Globe, Cloud, HelpCircle, Loader2, Smartphone, Monitor, Apple, Moon, Sun, ChevronRight } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -30,10 +30,10 @@ export default function Home() {
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
-  const recognitionRef = useRef<any>(null)
+  const recognitionRef = useRef<any>(null) // Using any for simplicity
   const { toast } = useToast()
 
-  // مدیریت حالت شب/روز
+  // Theme Management
   useEffect(() => {
     const root = window.document.documentElement
     root.classList.remove(isDarkMode ? 'light' : 'dark')
@@ -330,7 +330,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 md:p-8 font-vazir text-foreground transition-colors duration-500">
-      {/* دکمه تغییر تم - اصلاح شده */}
+      {/* دکمه تغییر حالت شب/روز - نسخه نهایی و بدون خطا */}
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -345,11 +345,27 @@ export default function Home() {
         >
           <AnimatePresence mode="wait">
             {isDarkMode ? (
-              // اصلاح خطا: استفاده از motion.Sun
-              <motion.Sun key="Sun" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.3 }} className="h-5 w-5" />
+              <motion.div
+                key="sun"
+                initial={{ rotate: -90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                exit={{ rotate: 90, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="flex items-center justify-center"
+              >
+                <Sun className="h-5 w-5" />
+              </motion.div>
             ) : (
-              // اصلاح خطا: استفاده از motion.Moon
-              <motion.Moon key="moon" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.3 }} className="h-5 w-5" />
+              <motion.div
+                key="moon"
+                initial={{ rotate: -90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                exit={{ rotate: 90, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="flex items-center justify-center"
+              >
+                <Moon className="h-5 w-5" />
+              </motion.div>
             )}
           </AnimatePresence>
         </Button>
