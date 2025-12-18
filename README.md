@@ -41,6 +41,37 @@ This scaffold provides a robust foundation built with:
 - **📅 Date-fns** - Modern JavaScript date utility library
 - **🪝 ReactUse** - Collection of essential React hooks for modern development
 
+## 🎯 Vocal Type: Cross-Platform Speech Recognition
+
+This application features **advanced cross-platform speech recognition** with intelligent device detection and optimized behavior for each platform:
+
+### 🖥️ **Windows Desktop Experience**
+- **Native Web Speech API** integration with full real-time transcription
+- **Watchdog timer** for continuous recording stability
+- **100ms restart delay** for seamless experience
+- **Continuous mode** enabled for uninterrupted dictation
+
+### 📱 **Android Mobile Experience**
+- **Optimized Web Speech** without watchdog interference
+- **Conservative approach** with 500ms restart delay
+- **Non-continuous mode** for mobile browser compatibility
+- **Enhanced logging** for debugging mobile-specific behaviors
+
+### 🍎 **iOS Experience**
+- **Cloud API fallback** with Python microservice
+- **Google Speech Recognition** integration via FFmpeg
+- **Full Persian language support**
+
+### 🔧 **Device Detection System**
+```typescript
+// Intelligent platform detection with specific optimizations:
+const deviceConfig = {
+  Windows: { useWatchdog: true, restartDelay: 100ms, continuous: true },
+  Android: { useWatchdog: false, restartDelay: 500ms, continuous: false },
+  iOS: { useWatchdog: false, restartDelay: 300ms, continuous: false }
+}
+```
+
 ## 🎯 Why This Scaffold?
 
 - **🏎️ Fast Development** - Pre-configured tooling and best practices

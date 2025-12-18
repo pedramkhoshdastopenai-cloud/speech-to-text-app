@@ -143,18 +143,32 @@ export default function Home() {
   // ==========================================
 
   const startWatchdog = () => {
+    const config = getDeviceConfig();
+    
+    // غیرفعال کردن watchdog برای پلتفرم‌های غیر از Windows
+    if (!config.useWatchdog) {
+      console.log(`🔍 ${config.platformName}: Watchdog disabled for platform stability`);
+      return;
+    }
+    
     if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current)
+    
+    console.log(`🔍 ${config.platformName}: Starting watchdog with ${config.watchdogInterval}ms interval`);
+    
     watchdogTimerRef.current = setInterval(() => {
         if (isRecordingRef.current && recognitionRef.current) {
             try {
                 recognitionRef.current.start()
             } catch (e) { /* Active */ }
         }
-    }, 2000)
+    }, config.watchdogInterval)
   }
 
   const initWebSpeech = useCallback(() => {
     if (typeof window === 'undefined') return false
+    
+    const config = getDeviceConfig();
+    console.log(`🔍 ${config.platformName}: Initializing Web Speech with config:`, config);
     
     // @ts-ignore
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -170,7 +184,7 @@ export default function Home() {
 
     try {
       const recognition = new SpeechRecognition()
-      recognition.continuous = true 
+      recognition.continuous = config.continuousMode  // استفاده از تنظیمات مبتنی بر دستگاه
       recognition.interimResults = true 
       recognition.lang = selectedLanguage
       
@@ -220,7 +234,11 @@ export default function Home() {
       }
       
       recognition.onend = () => {
+        const config = getDeviceConfig();
+        
         if (isRecordingRef.current) {
+            console.log(`🔍 ${config.platformName}: Recognition ended, restarting in ${config.restartDelay}ms`);
+            
             if (currentSessionTextRef.current) {
                 historyTranscriptRef.current = (historyTranscriptRef.current + ' ' + currentSessionTextRef.current).trim()
                 currentSessionTextRef.current = ''
@@ -232,9 +250,14 @@ export default function Home() {
 
             setTimeout(() => {
                 if (isRecordingRef.current) {
-                    try { recognition.start() } catch(e){}
+                    try { 
+                        recognition.start();
+                        console.log(`🔍 ${config.platformName}: Recognition restarted successfully`);
+                    } catch(e){
+                        console.log(`🔍 ${config.platformName}: Restart failed:`, e);
+                    }
                 }
-            }, 100)
+            }, config.restartDelay)  // استفاده از timeout مبتنی بر دستگاه
         }
       }
       
@@ -246,11 +269,67 @@ export default function Home() {
     }
   }, [selectedLanguage]) 
 
+  // ==========================================
+  // 🔍 DEVICE DETECTION SYSTEM
+  // ==========================================
+  
+  const getDeviceInfo = () => {
+    if (typeof window === 'undefined') return { isWindows: false, isAndroid: false, isIOS: false, isMobile: false };
+    
+    const userAgent = navigator.userAgent;
+    const platform = navigator.platform || (navigator as any).userAgentData?.platform || '';
+    
+    const isWindows = /Win\d{2}|Windows/.test(userAgent) || /Win/.test(platform);
+    const isAndroid = /Android/i.test(userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent) || 
+                 (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isMobile = isAndroid || isIOS || /webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+    
+    return { isWindows, isAndroid, isIOS, isMobile };
+  };
+
   const isIOS = () => {
-    if (typeof window === 'undefined') return false;
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  }
+    const { isIOS } = getDeviceInfo();
+    return isIOS;
+  };
+
+  const getDeviceConfig = () => {
+    const deviceInfo = getDeviceInfo();
+    
+    // Windows Configuration - الگوی فعلی بدون تغییر
+    if (deviceInfo.isWindows) {
+      return {
+        useWatchdog: true,
+        watchdogInterval: 2000,
+        restartDelay: 100,
+        continuousMode: true,
+        maxSilenceTime: 2000,
+        platformName: 'Windows'
+      };
+    }
+    
+    // Android Configuration - بهینه‌سازی شده برای موبایل
+    if (deviceInfo.isAndroid) {
+      return {
+        useWatchdog: false,  // غیرفعال کردن watchdog برای Android
+        watchdogInterval: 3000,
+        restartDelay: 500,    // timeout طولانی‌تر برای Android
+        continuousMode: false, // conservative approach برای موبایل
+        maxSilenceTime: 3000,
+        platformName: 'Android'
+      };
+    }
+    
+    // Default Configuration (شامل iOS و سایر پلتفرم‌ها)
+    return {
+      useWatchdog: false,
+      watchdogInterval: 3000,
+      restartDelay: 300,
+      continuousMode: false,
+      maxSilenceTime: 3000,
+      platformName: 'Other'
+    };
+  };
 
   const stopRecordingInternal = () => {
     setIsRecording(false)
@@ -280,6 +359,10 @@ export default function Home() {
 
   const startRecording = async () => {
     const supportsWebSpeech = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+    const config = getDeviceConfig();
+    
+    console.log(`🔍 ${config.platformName}: Starting recording with Web Speech mode`);
+    console.log(`🔍 Device Info:`, getDeviceInfo());
     
     if (!showResult) {
        historyTranscriptRef.current = ''
@@ -298,6 +381,7 @@ export default function Home() {
           recognitionRef.current.start()
           setShowResult(true)
           startWatchdog()
+          console.log(`🔍 ${config.platformName}: Web Speech recording started successfully`);
         } catch (error) {
           stopRecordingInternal()
         }
@@ -305,6 +389,8 @@ export default function Home() {
     } 
     else {
       // Cloud API Logic
+      console.log(`🔍 ${config.platformName}: Starting recording with Cloud API mode`);
+      
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
