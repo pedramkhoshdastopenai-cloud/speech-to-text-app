@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Mic, MicOff, Copy, Check, Globe, Cloud, HelpCircle } from 'lucide-react'
+import { Mic, MicOff, Copy, Check, Globe, Cloud, HelpCircle, Loader2, Smartphone, Monitor, Apple, Moon, Sun, ChevronRight } from 'lucide-react' // اطمینان از وارد کردن Sun و Moon
 import { useToast } from '@/hooks/use-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -23,11 +23,30 @@ export default function Home() {
   const [shortcutKey, setShortcutKey] = useState('F10')
   const [debugInfo, setDebugInfo] = useState('')
   const [isBrowserSupported, setIsBrowserSupported] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadingMessage, setLoadingMessage] = useState('در حال بارگذاری...')
+  const [isDarkMode, setIsDarkMode] = useState(true)
+  const [selectedPlatform, setSelectedPlatform] = useState<'ios' | 'android' | 'windows'>('ios')
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
-  const recognitionRef = useRef<any>(null) // از any استفاده کردیم تا با تایپ‌اسکریپت درگیر نشویم
+  const recognitionRef = useRef<any>(null)
   const { toast } = useToast()
+
+  // مدیریت حالت شب/روز
+  useEffect(() => {
+    const root = window.document.documentElement
+    root.classList.remove(isDarkMode ? 'light' : 'dark')
+    root.classList.add(isDarkMode ? 'dark' : 'light')
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light')
+  }, [isDarkMode])
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme')
+    if (savedTheme === 'light') {
+      setIsDarkMode(false)
+    }
+  }, [])
 
   // Sync editedText with transcription and liveTranscription
   useEffect(() => {
@@ -68,7 +87,6 @@ export default function Home() {
 
   // Initialize Web Speech API
   const initWebSpeech = () => {
-    // Check support
     if (typeof window === 'undefined') return false
     
     // @ts-ignore
@@ -89,8 +107,6 @@ export default function Home() {
       recognition.interimResults = true
       recognition.lang = selectedLanguage
       
-      console.log('--- راه‌اندازی تشخیص گفتار ---')
-      
       recognition.onresult = (event: any) => {
         let interimChunk = ''
         let finalChunk = ''
@@ -106,29 +122,20 @@ export default function Home() {
           }
         }
         
-        // اگر متن نهایی داشتیم، به متن اصلی اضافه کن
         if (finalChunk) {
           setTranscription(prev => {
             const newText = (prev + ' ' + finalChunk).trim()
-            console.log('📝 متن نهایی ثبت شد:', newText)
             return newText
           })
-          setLiveTranscription('') // متن زنده را پاک کن چون نهایی شد
+          setLiveTranscription('')
         } 
-        // اگر فقط متن زنده (در حال صحبت) بود
         else if (interimChunk) {
           setLiveTranscription(interimChunk)
-          console.log('⚡ در حال شنیدن:', interimChunk)
         }
       }
       
       recognition.onerror = (event: any) => {
-        console.error('Speech error:', event.error)
-        
-        // خطاهای رایج را نادیده می‌گیریم تا ضبط قطع نشود
         if (event.error === 'no-speech') return 
-        
-        setDebugInfo(prev => prev + `\nError: ${event.error}`)
         
         if (event.error === 'not-allowed') {
             setIsRecording(false)
@@ -141,13 +148,10 @@ export default function Home() {
       }
       
       recognition.onend = () => {
-        // اگر کاربر دکمه توقف را نزده اما ضبط قطع شده، دوباره وصل شو (برای حالت پیوسته)
         if (isRecording) {
             try {
                 recognition.start()
-                console.log('🔄 اتصال مجدد خودکار...')
             } catch (e) {
-                // اگر نشد، وضعیت ضبط را فالس کن
                 setIsRecording(false)
             }
         }
@@ -161,7 +165,6 @@ export default function Home() {
     }
   }
 
-// تشخیص سیستم عامل iOS
   const isIOS = () => {
     if (typeof window === 'undefined') return false;
     return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
@@ -169,10 +172,8 @@ export default function Home() {
   }
 
   const startRecording = async () => {
-    // اول چک کن اگر وب اسپیچ ساپورت میشه (مثل اندروید/دسکتاپ) از همون استفاده کن
     const supportsWebSpeech = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
     
-    // اگر ساپورت میشد و کاربر iOS نبود (چون گاهی iOS دروغ میگه که ساپورت میکنه ولی کار نمیکنه!)
     if (useWebSpeech && supportsWebSpeech && !isIOS()) {
       const initialized = initWebSpeech()
       if (initialized && recognitionRef.current) {
@@ -186,9 +187,7 @@ export default function Home() {
         }
       }
     } 
-    // 🚀 بخش جدید: اگر iOS بود یا وب اسپیچ نداشت
     else {
-      console.log("🍎 حالت iOS یا Server-Side فعال شد");
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
@@ -206,12 +205,11 @@ export default function Home() {
           setIsProcessing(true);
           setShowResult(true);
           
-          // ارسال به سرور خودمون
           const formData = new FormData();
           formData.append('audio', audioBlob);
 
           try {
-            const response = await fetch('/api/stt', { // آدرس API جدید که ساختیم
+            const response = await fetch('/api/stt', {
               method: 'POST',
               body: formData,
             });
@@ -234,22 +232,19 @@ export default function Home() {
     }
   }
 
-const stopRecording = () => {
-    // توقف وب اسپیچ
+  const stopRecording = () => {
     if (recognitionRef.current && isRecording && !mediaRecorderRef.current) {
       recognitionRef.current.stop()
       setIsRecording(false)
     }
-    // توقف ریکوردر (حالت iOS)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop(); // این باعث میشه رویداد onstop اجرا بشه و فایل ارسال بشه
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop()); // بستن میکروفون
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       mediaRecorderRef.current = null;
       setIsRecording(false);
     }
   }
 
-  // Copy text
   const copyToClipboard = async () => {
     const textToCopy = editedText.trim()
     if (!textToCopy) return
@@ -264,8 +259,11 @@ const stopRecording = () => {
     }
   }
 
-  // Check browser on load
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+    
     if (typeof window !== 'undefined') {
       const hasSupport = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window
       const isHttps = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
@@ -275,45 +273,135 @@ const stopRecording = () => {
     }
     
     return () => {
+      clearTimeout(timer);
       if (recognitionRef.current) recognitionRef.current.abort()
     }
   }, [])
 
+  const LoadingScreen = () => (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background"
+    >
+      <div className="text-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          className="w-20 h-20 mx-auto mb-6 rounded-full border-4 border-t-primary border-r-transparent border-b-transparent border-l-transparent"
+        />
+        <motion.h2 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="text-2xl font-bold text-foreground mb-2"
+        >
+          تبدیل گفتار به نوشتار
+        </motion.h2>
+        <motion.p 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="text-muted-foreground"
+        >
+          {loadingMessage}
+        </motion.p>
+      </div>
+    </motion.div>
+  );
+
+  const ProcessingAnimation = () => (
+    <div className="flex flex-col items-center justify-center py-8">
+      <motion.div
+        animate={{ scale: [1, 1.2, 1] }}
+        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+        className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mb-4"
+      >
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </motion.div>
+      <p className="text-muted-foreground text-lg">در حال پردازش صدا...</p>
+    </div>
+  );
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-4 md:p-8 font-vazir text-white">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 md:p-8 font-vazir text-foreground transition-colors duration-500">
+      {/* دکمه تغییر تم - اصلاح شده */}
+      <motion.div 
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.6 }}
+        className="absolute top-4 right-4 md:top-8 md:right-8"
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          className="rounded-full w-12 h-12 bg-muted/50 backdrop-blur-sm border-border/50 shadow-lg hover:bg-muted hover:shadow-xl hover:scale-105 transition-all duration-300"
+        >
+          <AnimatePresence mode="wait">
+            {isDarkMode ? (
+              // اصلاح خطا: استفاده از motion.Sun
+              <motion.Sun key="Sun" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.3 }} className="h-5 w-5" />
+            ) : (
+              // اصلاح خطا: استفاده از motion.Moon
+              <motion.Moon key="moon" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.3 }} className="h-5 w-5" />
+            )}
+          </AnimatePresence>
+        </Button>
+      </motion.div>
+
       <AnimatePresence>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
+          transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="text-center mb-8 md:mb-12"
         >
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-2 tracking-tight">تبدیل گفتار به نوشتار</h1>
-          <p className="text-slate-400 text-lg md:text-xl">صحبت کنید و متن را ببینید</p>
+          <motion.h1 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="text-4xl md:text-5xl font-bold text-foreground mb-2 tracking-tight"
+          >
+            تبدیل گفتار به نوشتار
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="text-muted-foreground text-lg md:text-xl"
+          >
+            صحبت کنید و متن را ببینید
+          </motion.p>
         </motion.div>
       </AnimatePresence>
 
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
+        transition={{ duration: 0.5, delay: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
         className="flex flex-col md:flex-row gap-3 mb-8 md:mb-12"
       >
         <Button 
           variant={useWebSpeech ? "default" : "outline"}
           onClick={() => setUseWebSpeech(true)}
           disabled={!isBrowserSupported}
-          className="group flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20 bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
+          className="group flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-500 hover:shadow-lg hover:shadow-primary/20 bg-card border-border text-foreground hover:bg-accent"
         >
-          <Globe className="h-5 w-5 transition-transform duration-300 group-hover:rotate-180" />
+          <Globe className="h-5 w-5 transition-transform duration-500 group-hover:rotate-180" />
           Web Speech (رایگان)
         </Button>
         <Button 
           variant={!useWebSpeech ? "default" : "outline"}
           onClick={() => setUseWebSpeech(false)}
-          className="group flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20 bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
+          className="group flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-500 hover:shadow-lg hover:shadow-primary/20 bg-card border-border text-foreground hover:bg-accent"
         >
-          <Cloud className="h-5 w-5 transition-transform duration-300 group-hover:translate-y-[-4px]" />
+          <Cloud className="h-5 w-5 transition-transform duration-500 group-hover:translate-y-[-4px]" />
           Cloud API
         </Button>
       </motion.div>
@@ -324,11 +412,11 @@ const stopRecording = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="mb-8 md:mb-12 w-full max-w-xs md:max-w-md"
           >
             <select
-              className="w-full p-3 rounded-xl border border-slate-700 bg-slate-800 text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300 hover:shadow-blue-500/20"
+              className="w-full p-3 rounded-xl border-border bg-card text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all duration-500 hover:shadow-primary/20"
               value={selectedLanguage}
               onChange={(e) => setSelectedLanguage(e.target.value)}
             >
@@ -339,21 +427,20 @@ const stopRecording = () => {
         )}
       </AnimatePresence>
 
-      {/* دکمه اصلی ضبط */}
       <motion.div
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         animate={{
-          scale: isRecording ? [1, 1.1, 1] : 1,
-          transition: { repeat: isRecording ? Infinity : 0, duration: 1.2, ease: 'easeInOut' }
+          scale: isRecording ? [1, 1.05, 1] : 1,
+          transition: { repeat: isRecording ? Infinity : 0, duration: 1.2, ease: "easeInOut" }
         }}
         className="relative"
       >
-        <div className={`absolute inset-0 rounded-full blur-xl transition-all duration-500 ${isRecording ? 'bg-red-500/30 animate-pulse' : 'bg-blue-500/20'}`}></div>
+        <div className={`absolute inset-0 rounded-full blur-xl transition-all duration-700 ${isRecording ? 'bg-destructive/30 animate-pulse' : 'bg-primary/20'}`}></div>
         <Button
           size="lg"
           onClick={isRecording ? stopRecording : startRecording}
-          className={`relative w-32 h-32 md:w-40 md:h-40 rounded-full shadow-2xl transition-all duration-500 flex items-center justify-center ${isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+          className={`relative w-32 h-32 md:w-40 md:h-40 rounded-full shadow-2xl transition-all duration-500 flex items-center justify-center ${isRecording ? 'bg-destructive hover:bg-destructive/90' : 'bg-primary hover:bg-primary/90'}`}
         >
           {isRecording ? <MicOff className="h-14 w-14 md:h-16 md:w-16" /> : <Mic className="h-14 w-14 md:h-16 md:w-16" />}
         </Button>
@@ -363,137 +450,301 @@ const stopRecording = () => {
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mt-4 text-red-400 font-medium text-lg md:text-xl animate-pulse"
+          className="mt-4 text-destructive font-medium text-lg md:text-xl animate-pulse"
         >
           در حال ضبط...
         </motion.p>
       )}
 
-      {/* دکمه راهنمای استفاده */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
+        transition={{ duration: 0.5, delay: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
         className="mt-8 md:mt-12"
       >
         <Button
           variant="ghost"
           onClick={() => setShowGuide(true)}
-          className="text-slate-400 hover:text-white transition-colors duration-300 flex items-center gap-2"
+          className="text-muted-foreground hover:text-foreground transition-colors duration-300 flex items-center gap-2"
         >
           <HelpCircle className="h-5 w-5" />
           راهنمای استفاده
         </Button>
       </motion.div>
 
-      {/* مودال نمایش نتیجه */}
       <Dialog open={showResult} onOpenChange={setShowResult}>
-        <DialogContent className="sm:max-w-md md:max-w-lg lg:max-w-xl rounded-2xl shadow-2xl border-0 overflow-hidden bg-slate-900">
+        <DialogContent className="sm:max-w-md md:max-w-lg lg:max-w-xl rounded-2xl shadow-2xl border-0 overflow-hidden bg-card">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
             <DialogHeader className="pb-2">
-              <DialogTitle className="text-right text-2xl md:text-3xl font-bold text-white">نتیجه</DialogTitle>
+              <DialogTitle className="text-right text-2xl md:text-3xl font-bold text-foreground">نتیجه</DialogTitle>
             </DialogHeader>
             
             <div className="mt-4 space-y-4">
-              {/* باکس نمایش متن */}
-              <div className="relative min-h-[220px] md:min-h-[280px] p-5 bg-slate-800 rounded-2xl border border-slate-700 text-right shadow-inner" dir="rtl">
+              {isProcessing && <ProcessingAnimation />}
+              
+              <div className="relative min-h-[220px] md:min-h-[280px] p-5 bg-muted rounded-2xl border border-border text-right shadow-inner" dir="rtl">
                 <Textarea
                   value={editedText}
                   onChange={(e) => setEditedText(e.target.value)}
-                  className="w-full h-full bg-transparent border-none text-white text-xl md:text-2xl leading-loose resize-none focus:outline-none scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800"
+                  className="w-full h-full bg-transparent border-none text-foreground text-xl md:text-2xl leading-loose resize-none focus:outline-none scrollbar-thin scrollbar-thumb-muted-foreground/50 scrollbar-track-muted"
                   placeholder="متن اینجا ظاهر می‌شود..."
                 />
-                {/* مکان‌نما چشمک‌زن اگر در حال ضبط باشد و متن زنده نباشد */}
-                {isRecording && !liveTranscription && (
+                {isRecording && !liveTranscription && !isProcessing && (
                   <motion.span
                     animate={{ opacity: [1, 0, 1] }}
                     transition={{ repeat: Infinity, duration: 0.8 }}
-                    className="absolute top-5 right-5 inline-block w-0.5 h-6 md:h-8 bg-blue-500"
+                    className="absolute top-5 right-5 inline-block w-0.5 h-6 md:h-8 bg-primary"
                   ></motion.span>
                 )}
               </div>
 
               <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={copyToClipboard} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20 bg-slate-800 border-slate-700 text-white hover:bg-slate-700">
+                <Button variant="outline" onClick={copyToClipboard} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 bg-card border-border text-foreground hover:bg-accent">
                   {copied ? <Check className="mr-2 h-5 w-5 text-green-500" /> : <Copy className="mr-2 h-5 w-5" />}
                   کپی متن
                 </Button>
-                <Button onClick={() => setShowResult(false)} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20 bg-blue-600 hover:bg-blue-700">
+                <Button onClick={() => setShowResult(false)} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground">
                   بستن
                 </Button>
               </div>
-              
-              {/* دیباگ برای اطمینان */}
-              {debugInfo && (
-                <details className="text-xs text-slate-400 text-left" dir="ltr">
-                  <summary>Debug Info</summary>
-                  <pre>{debugInfo}</pre>
-                </details>
-              )}
             </div>
           </motion.div>
         </DialogContent>
       </Dialog>
 
-      {/* مودال راهنمای استفاده */}
       <Dialog open={showGuide} onOpenChange={setShowGuide}>
-        <DialogContent className="sm:max-w-md md:max-w-lg lg:max-w-xl rounded-2xl shadow-2xl border-0 overflow-hidden bg-slate-900">
+        <DialogContent className="sm:max-w-3xl md:max-w-4xl lg:max-w-5xl rounded-2xl shadow-2xl border-0 overflow-hidden bg-card max-h-[90vh] overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
-            <DialogHeader className="pb-2">
-              <DialogTitle className="text-right text-2xl md:text-3xl font-bold text-white">راهنمای استفاده</DialogTitle>
+            <DialogHeader className="pb-6 border-b border-border">
+              <DialogTitle className="text-right text-2xl md:text-3xl font-bold text-foreground">راهنمای استفاده</DialogTitle>
             </DialogHeader>
             
-            <div className="mt-4 space-y-6 text-right" dir="rtl">
-              <p className="text-slate-300 text-lg leading-relaxed">
-                این نرم‌افزار برای تبدیل گفتار به متن طراحی شده است. می‌توانید از دو روش Web Speech (رایگان و محلی) یا Cloud API (پردازش ابری) استفاده کنید. زبان پیش‌فرض فارسی است، اما می‌توانید انگلیسی را نیز انتخاب کنید.
-              </p>
-              <ul className="list-disc list-inside text-slate-300 text-lg leading-relaxed space-y-2">
-                <li>دکمه میکروفون را فشار دهید تا ضبط شروع شود.</li>
-                <li>صحبت کنید و متن زنده را مشاهده کنید.</li>
-                <li>دوباره دکمه را فشار دهید تا ضبط متوقف شود.</li>
-                <li>متن نهایی در کادر قابل ویرایش ظاهر می‌شود و می‌توانید آن را کپی یا ویرایش کنید.</li>
-                <li>در صورت استفاده از Cloud API، صدا به سرور ارسال و پردازش می‌شود.</li>
-              </ul>
-              
-              <div className="border-t border-slate-700 pt-4">
-                <h3 className="text-xl font-semibold text-white mb-3">شورتکات کیبورد (فقط برای کامپیوتر)</h3>
-                <p className="text-slate-300 text-lg mb-4">
-                  کلید مورد نظر را انتخاب کنید. با نگه داشتن این کلید، ضبط صدا به صورت خودکار شروع می‌شود و متن در کادر نتیجه تایپ خواهد شد. از میکروفون پیش‌فرض کامپیوتر استفاده می‌شود. این قابلیت زمانی فعال است که صفحه نرم‌افزار باز باشد.
-                </p>
-                <Select value={shortcutKey} onValueChange={setShortcutKey}>
-                  <SelectTrigger className="w-full bg-slate-800 border-slate-700 text-white">
-                    <SelectValue placeholder="انتخاب کلید" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700 text-white">
-                    <SelectItem value="F1">F1</SelectItem>
-                    <SelectItem value="F2">F2</SelectItem>
-                    <SelectItem value="F3">F3</SelectItem>
-                    <SelectItem value="F4">F4</SelectItem>
-                    <SelectItem value="F5">F5</SelectItem>
-                    <SelectItem value="F6">F6</SelectItem>
-                    <SelectItem value="F7">F7</SelectItem>
-                    <SelectItem value="F8">F8</SelectItem>
-                    <SelectItem value="F9">F9</SelectItem>
-                    <SelectItem value="F10">F10</SelectItem>
-                    <SelectItem value="F11">F11</SelectItem>
-                    <SelectItem value="F12">F12</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="mt-6 space-y-8 text-right" dir="rtl">
+              <div className="flex justify-center gap-2 p-1 bg-muted rounded-xl">
+                {[
+                  { key: 'ios', label: 'iOS', icon: Apple },
+                  { key: 'android', label: 'Android', icon: Smartphone },
+                  { key: 'windows', label: 'Windows', icon: Monitor },
+                ].map(({ key, label, icon: Icon }) => (
+                  <Button
+                    key={key}
+                    variant={selectedPlatform === key ? 'default' : 'ghost'}
+                    onClick={() => setSelectedPlatform(key as any)}
+                    className={`flex-1 gap-2 rounded-lg transition-all duration-300 ${selectedPlatform === key ? 'bg-primary text-primary-foreground shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Button>
+                ))}
               </div>
 
-              <div className="flex justify-end">
-                <Button onClick={() => setShowGuide(false)} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20 bg-blue-600 hover:bg-blue-700">
-                  بستن
-                </Button>
-              </div>
+              <AnimatePresence mode="wait">
+                {selectedPlatform === 'ios' && (
+                  <motion.div
+                    key="ios"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3 }}
+                    className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 rounded-2xl p-6 md:p-8 border border-blue-200 dark:border-blue-800"
+                  >
+                    <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-3">
+                      <Apple className="h-6 w-6 text-blue-500" />
+                      آموزش فعال‌سازی «VocalType» در آیفون 🎙️📱
+                    </h2>
+                    <p className="text-muted-foreground mb-8 leading-relaxed">
+                      با این روش می‌تونی تایپ صوتی رو خیلی سریع و فقط با یک لمس فعال کنی.
+                    </p>
+                    
+                    <div className="space-y-6">
+                      <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-blue-200 dark:border-blue-700"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center flex-shrink-0 font-bold">۱</div>
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-2">نصب شورتکات</h3>
+                            <p className="text-muted-foreground mb-3">ابتدا شورتکات «VocalType» را از لینک زیر نصب کن:</p>
+                            <a 
+                              href="https://www.icloud.com/shortcuts/26da3fa054c64be58c9c01ff3fa9a98f" 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                            >
+                              <Globe className="h-4 w-4" />
+                              نصب VocalType
+                            </a>
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-blue-200 dark:border-blue-700"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center flex-shrink-0 font-bold">۲</div>
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-2">فعال‌سازی AssistiveTouch</h3>
+                            <ul className="space-y-2 text-muted-foreground">
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> وارد Settings گوشی شو</li>
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> برو به Accessibility</li>
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> گزینه Touch رو انتخاب کن</li>
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> وارد AssistiveTouch شو و اون رو فعال کن</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-blue-200 dark:border-blue-700"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center flex-shrink-0 font-bold">۳</div>
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-2">اتصال شورتکات به AssistiveTouch</h3>
+                            <ul className="space-y-2 text-muted-foreground">
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> داخل صفحه AssistiveTouch، وارد بخش Custom Actions شو</li>
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> یکی از گزینه‌ها (Single Tap / Double Tap / Long Press) رو انتخاب کن</li>
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> لیست رو اسکرول کن تا به بخش Shortcuts برسی</li>
+                              <li className="flex items-center gap-2"><ChevronRight className="h-4 w-4" /> شورتکات VocalType رو انتخاب کن</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </motion.div>
+                      
+                      <div className="p-4 bg-blue-100 dark:bg-blue-900/50 rounded-xl border border-blue-300 dark:border-blue-700">
+                        <p className="text-sm text-blue-800 dark:text-blue-200">
+                          <span className="font-semibold">✅ نتیجه نهایی:</span> از این به بعد، با حرکتی که انتخاب کردی روی AssistiveTouch، تایپ صوتی فوراً فعال میشه. گوشی شما با دریافت پاسخ ویبره می‌ده و متن در کلیپ‌بورد کپی میشه.
+                        </p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {selectedPlatform === 'android' && (
+                  <motion.div
+                    key="android"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3 }}
+                    className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 rounded-2xl p-6 md:p-8 border border-green-200 dark:border-green-800"
+                  >
+                    <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-3">
+                      <Smartphone className="h-6 w-6 text-green-500" />
+                      فعال‌سازی تایپ صوتی در اندروید 🤖📱
+                    </h2>
+                    <p className="text-muted-foreground mb-8 leading-relaxed">
+                      اندروید به صورت پیش‌فرض از تایپ صوتی عالی پشتیبانی می‌کند. برای دسترسی سریع‌تر:
+                    </p>
+                    
+                    <div className="space-y-6">
+                      <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-green-200 dark:border-green-700"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center flex-shrink-0 font-bold">۱</div>
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-2">استفاده از کیبورد</h3>
+                            <p className="text-muted-foreground">
+                              در هر قسمتی که متن وارد می‌کنید، روی آیکون میکروفون در کیبورد Gboard یا کیبورد پیش‌فرض خود ضربه بزنید و شروع به صحبت کنید.
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
+                      
+                      <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-green-200 dark:border-green-700"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center flex-shrink-0 font-bold">۲</div>
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-2">دسترسی سریع از طریق دستیار صوتی</h3>
+                            <p className="text-muted-foreground">
+                              دستیار صوتی Google (Hey Google) را فعال کنید و بگویید "تایپ کن" یا "Type" و سپس متن مورد نظر خود را بیان کنید.
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {selectedPlatform === 'windows' && (
+                  <motion.div
+                    key="windows"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3 }}
+                    className="bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900 rounded-2xl p-6 md:p-8 border border-sky-200 dark:border-sky-800"
+                  >
+                    <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-3">
+                      <Monitor className="h-6 w-6 text-sky-500" />
+                      فعال‌سازی تایپ صوتی در ویندوز ۱۱ 🖥️🎤
+                    </h2>
+                    <p className="text-muted-foreground mb-8 leading-relaxed">
+                      ویندوز ۱۱ دارای قابلیت تایپ صوتی داخلی و قدرتمند است که با یک شورتکات ساده قابل دسترسی است.
+                    </p>
+                    
+                    <div className="space-y-6">
+                      <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-sky-200 dark:border-sky-700"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 rounded-full bg-sky-500 text-white flex items-center justify-center flex-shrink-0 font-bold">۱</div>
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-2">استفاده از شورتکات</h3>
+                            <p className="text-muted-foreground mb-3">
+                              در هر برنامه یا متنی که مکان‌نما در حال چشمک‌زدن است، کلیدهای ترکیبی زیر را فشار دهید:
+                            </p>
+                            <div className="flex items-center justify-center gap-2 p-3 bg-sky-100 dark:bg-sky-900/50 rounded-lg border border-sky-300 dark:border-sky-700">
+                              <kbd className="px-3 py-1 bg-white dark:bg-slate-700 rounded border border-border text-sm font-mono">Win</kbd>
+                              <span className="text-muted-foreground">+</span>
+                              <kbd className="px-3 py-1 bg-white dark:bg-slate-700 rounded border border-border text-sm font-mono">H</kbd>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-sky-200 dark:border-sky-700"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 rounded-full bg-sky-500 text-white flex items-center justify-center flex-shrink-0 font-bold">۲</div>
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-2">شروع به صحبت کنید</h3>
+                            <p className="text-muted-foreground">
+                              پس از فشردن شورتکات، پنجره‌ی تایپ صوتی ظاهر می‌شود. میکروفون را فعال کرده و متن خود را بگویید. متن به صورت خودکار تایپ خواهد شد.
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            
+            <div className="flex justify-end mt-8 pt-6 border-t border-border">
+              <Button onClick={() => setShowGuide(false)} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground">
+                بستن
+              </Button>
             </div>
           </motion.div>
         </DialogContent>
