@@ -47,8 +47,7 @@ export default function Home() {
 
   // --- Logger ---
   const log = (message: string, data?: any) => {
-    const time = new Date().toLocaleTimeString()
-    console.log(`%c[STT-DEBUG ${time}] ${message}`, 'color: #00ffff; font-weight: bold;', data || '')
+    // console.log disabled for production
   }
 
   // --- Fix Scroll: اسکرول خودکار ---
@@ -59,8 +58,11 @@ export default function Home() {
     }
   }, [transcription, liveTranscription, showResult]);
 
-  // --- Theme Management ---
+  // --- Theme & Title Management ---
   useEffect(() => {
+    // 🟢 تنظیم تایتل تب مرورگر در لحظه لود
+    document.title = "تایپ صوتی هوشمند";
+
     const root = window.document.documentElement
     root.classList.remove(isDarkMode ? 'light' : 'dark')
     root.classList.add(isDarkMode ? 'dark' : 'light')
@@ -80,7 +82,7 @@ export default function Home() {
       if (!hasSupport) setUseWebSpeech(false)
     }
     
-    setTimeout(() => setIsLoading(false), 1500)
+    setTimeout(() => setIsLoading(false), 2000)
   }, [])
 
   // --- Text Sync Logic ---
@@ -146,7 +148,6 @@ export default function Home() {
         if (isRecordingRef.current && recognitionRef.current) {
             try {
                 recognitionRef.current.start()
-                log('Watchdog: Engine revived')
             } catch (e) { /* Active */ }
         }
     }, 2000)
@@ -395,9 +396,9 @@ export default function Home() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="text-2xl font-bold text-foreground mb-2"
+          className="text-4xl font-black text-foreground mb-2"
         >
-          تبدیل گفتار به نوشتار
+          VT
         </motion.h2>
         <motion.p 
           initial={{ opacity: 0, y: 10 }}
@@ -429,8 +430,9 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 md:p-8 font-vazir text-foreground transition-colors duration-500">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 md:p-8 font-vazir text-foreground transition-colors duration-500 relative">
       
+      {/* دکمه تم */}
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -471,29 +473,33 @@ export default function Home() {
         </Button>
       </motion.div>
 
+      {/* Hero Section & Logo */}
       <AnimatePresence>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="text-center mb-8 md:mb-12"
+          className="text-center mb-10 md:mb-16 flex flex-col items-center"
         >
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
+          {/* 🟢 دیزاین جدید لوگو (با جهت ltr برای چینش صحیح انگلیسی) */}
+          <div className="flex items-baseline gap-3 mb-6 select-none" dir="ltr">
+            <h1 className="text-7xl md:text-9xl font-black text-foreground tracking-tighter" style={{ textShadow: isDarkMode ? '0 0 30px rgba(255,255,255,0.1)' : '0 0 30px rgba(0,0,0,0.05)' }}>
+              VT
+            </h1>
+            <span className="text-2xl md:text-3xl font-bold tracking-[0.2em] text-primary/90 uppercase">
+              VocalType
+            </span>
+          </div>
+          
+          {/* 🟢 تیتر جدید */}
+          <motion.h2 
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="text-4xl md:text-5xl font-bold text-foreground mb-2 tracking-tight"
+            transition={{ delay: 0.2 }}
+            className="text-2xl md:text-4xl font-bold text-foreground tracking-tight"
           >
-            تبدیل گفتار به نوشتار
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="text-muted-foreground text-lg md:text-xl"
-          >
-            صحبت کنید و متن را ببینید
-          </motion.p>
+            دستیار هوشمند تایپ صوتی
+          </motion.h2>
         </motion.div>
       </AnimatePresence>
 
@@ -510,7 +516,7 @@ export default function Home() {
           className="group flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-500 hover:shadow-lg hover:shadow-primary/20 bg-card border-border text-foreground hover:bg-accent"
         >
           <Globe className="h-5 w-5 transition-transform duration-500 group-hover:rotate-180" />
-          Web Speech (رایگان)
+          Web Speech
         </Button>
         <Button 
           variant={!useWebSpeech ? "default" : "outline"}
@@ -588,6 +594,23 @@ export default function Home() {
         </Button>
       </motion.div>
 
+      {/* 🟢 Developer Credit Footer */}
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1, duration: 1 }}
+        className="absolute bottom-4 left-0 right-0 text-center"
+      >
+        <a 
+          href="https://instagram.com/pedram_khoshdast" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-xs font-mono text-muted-foreground/60 hover:text-primary transition-colors duration-300 tracking-wider"
+        >
+          Made by @pedram_khoshdast
+        </a>
+      </motion.div>
+
       <Dialog open={showResult} onOpenChange={handleDialogChange}>
         <DialogContent className="sm:max-w-md md:max-w-lg lg:max-w-xl rounded-2xl shadow-2xl border-0 overflow-hidden bg-card">
           <motion.div
@@ -602,7 +625,6 @@ export default function Home() {
             <div className="mt-4 space-y-4">
               {isProcessing && <ProcessingAnimation />}
               
-              {/* 🟢 Fix Scroll Location: اسکرول سمت راست (dir=ltr) و متن راست‌چین (text-right) */}
               <div className="relative h-[300px] md:h-[400px] p-5 bg-muted rounded-2xl border border-border shadow-inner overflow-hidden" dir="ltr">
                 <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-muted to-transparent z-10 pointer-events-none"></div>
                 
@@ -610,13 +632,12 @@ export default function Home() {
                   ref={textareaRef}
                   value={editedText}
                   onChange={handleManualEdit}
-                  dir="ltr" // جهت خود باکس چپ‌چین باشد تا اسکرول راست بماند
+                  dir="rtl"
                   className="w-full h-full bg-transparent border-none text-foreground text-xl md:text-2xl leading-loose resize-none focus:outline-none scrollbar-thin scrollbar-thumb-muted-foreground/50 scrollbar-track-muted text-right placeholder:text-right"
                   placeholder="متن اینجا ظاهر می‌شود..."
                 />
               </div>
 
-              {/* 🟢 Fix Buttons: جهت کانتینر ltr باشد تا دکمه‌ها راست بروند */}
               <div className="flex justify-end gap-3" dir="ltr">
                 <Button variant="outline" onClick={copyToClipboard} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 bg-card border-border text-foreground hover:bg-accent">
                   {copied ? <Check className="mr-2 h-5 w-5 text-green-500" /> : <Copy className="mr-2 h-5 w-5" />}
@@ -662,7 +683,6 @@ export default function Home() {
               </div>
               
               <AnimatePresence mode="wait">
-                 {/* ... بخش‌های راهنما طبق کد اصلی ... */}
                  {selectedPlatform === 'ios' && (
                   <motion.div
                     key="ios"
@@ -746,9 +766,9 @@ export default function Home() {
                       </div>
                     </div>
                   </motion.div>
-                )}
+                 )}
 
-                {selectedPlatform === 'android' && (
+                 {selectedPlatform === 'android' && (
                   <motion.div
                     key="android"
                     initial={{ opacity: 0, x: 20 }}
@@ -797,9 +817,9 @@ export default function Home() {
                       </motion.div>
                     </div>
                   </motion.div>
-                )}
+                 )}
 
-                {selectedPlatform === 'windows' && (
+                 {selectedPlatform === 'windows' && (
                   <motion.div
                     key="windows"
                     initial={{ opacity: 0, x: 20 }}
@@ -853,7 +873,7 @@ export default function Home() {
                       </motion.div>
                     </div>
                   </motion.div>
-                )}
+                 )}
               </AnimatePresence>
             </div>
             
