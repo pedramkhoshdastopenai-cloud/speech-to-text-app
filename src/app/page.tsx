@@ -1,39 +1,65 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Mic, MicOff, Copy, Check, Globe, Cloud, HelpCircle, Loader2, Smartphone, Monitor, Apple, Moon, Sun, ChevronRight } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export default function Home() {
+  // --- States ---
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  
   const [transcription, setTranscription] = useState('')
   const [liveTranscription, setLiveTranscription] = useState('')
   const [editedText, setEditedText] = useState('')
+  
   const [showResult, setShowResult] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [copied, setCopied] = useState(false)
   const [useWebSpeech, setUseWebSpeech] = useState(true)
   const [selectedLanguage, setSelectedLanguage] = useState('fa-IR')
   const [shortcutKey, setShortcutKey] = useState('F10')
-  const [debugInfo, setDebugInfo] = useState('')
   const [isBrowserSupported, setIsBrowserSupported] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingMessage, setLoadingMessage] = useState('در حال بارگذاری...')
   const [isDarkMode, setIsDarkMode] = useState(true)
   const [selectedPlatform, setSelectedPlatform] = useState<'ios' | 'android' | 'windows'>('ios')
   
+  // --- Refs ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
-  const recognitionRef = useRef<any>(null) // Using any for simplicity
+  const recognitionRef = useRef<any>(null)
+  
+  // مخازن امن برای مدیریت متن
+  const historyTranscriptRef = useRef('') 
+  const currentSessionTextRef = useRef('') 
+  
+  const isRecordingRef = useRef(false)
+  const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
   const { toast } = useToast()
 
-  // Theme Management
+  // --- Logger ---
+  const log = (message: string, data?: any) => {
+    const time = new Date().toLocaleTimeString()
+    console.log(`%c[STT-DEBUG ${time}] ${message}`, 'color: #00ffff; font-weight: bold;', data || '')
+  }
+
+  // --- Fix Scroll: اسکرول خودکار ---
+  useEffect(() => {
+    if (showResult && textareaRef.current) {
+      const textarea = textareaRef.current;
+      textarea.scrollTop = textarea.scrollHeight;
+    }
+  }, [transcription, liveTranscription, showResult]);
+
+  // --- Theme Management ---
   useEffect(() => {
     const root = window.document.documentElement
     root.classList.remove(isDarkMode ? 'light' : 'dark')
@@ -46,32 +72,57 @@ export default function Home() {
     if (savedTheme === 'light') {
       setIsDarkMode(false)
     }
+    
+    if (typeof window !== 'undefined') {
+      const hasSupport = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window
+      const isHttps = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
+      setIsBrowserSupported(hasSupport && isHttps)
+      if (!hasSupport) setUseWebSpeech(false)
+    }
+    
+    setTimeout(() => setIsLoading(false), 1500)
   }, [])
 
-  // Sync editedText with transcription and liveTranscription
+  // --- Text Sync Logic ---
   useEffect(() => {
     if (!showResult) {
       setTranscription('')
       setLiveTranscription('')
       setEditedText('')
+      historyTranscriptRef.current = ''
+      currentSessionTextRef.current = ''
     } else {
-      const combined = (transcription + ' ' + liveTranscription).trim()
-      if (combined !== editedText) {
-        setEditedText(combined)
+      const combined = (transcription + ' ' + liveTranscription).replace(/\s+/g, ' ').trim()
+      if (isRecordingRef.current) {
+          setEditedText(combined)
+      } else if (!editedText && combined) {
+          setEditedText(combined)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcription, liveTranscription, showResult])
 
-  // Keyboard shortcut listener for desktop
+  // --- Fix Manual Edit ---
+  const handleManualEdit = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value
+    setEditedText(newText)
+    
+    historyTranscriptRef.current = newText
+    setTranscription(newText)
+    currentSessionTextRef.current = '' 
+    setLiveTranscription('')
+  }
+
+  // --- Keyboard Shortcut ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === shortcutKey && !isRecording) {
+      if (e.key === shortcutKey && !isRecordingRef.current) {
         startRecording();
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === shortcutKey && isRecording) {
+      if (e.key === shortcutKey && isRecordingRef.current) {
         stopRecording();
       }
     };
@@ -83,10 +134,25 @@ export default function Home() {
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keyup', handleKeyUp);
     };
-  }, [shortcutKey, isRecording]);
+  }, [shortcutKey]);
 
-  // Initialize Web Speech API
-  const initWebSpeech = () => {
+  // ==========================================
+  // 🟢 CORE ENGINE
+  // ==========================================
+
+  const startWatchdog = () => {
+    if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current)
+    watchdogTimerRef.current = setInterval(() => {
+        if (isRecordingRef.current && recognitionRef.current) {
+            try {
+                recognitionRef.current.start()
+                log('Watchdog: Engine revived')
+            } catch (e) { /* Active */ }
+        }
+    }, 2000)
+  }
+
+  const initWebSpeech = useCallback(() => {
     if (typeof window === 'undefined') return false
     
     // @ts-ignore
@@ -95,7 +161,7 @@ export default function Home() {
     if (!SpeechRecognition) {
       toast({
         title: "عدم پشتیبانی",
-        description: "مرورگر شما از قابلیت تبدیل گفتار پشتیبانی نمی‌کند. لطفاً از Chrome استفاده کنید.",
+        description: "مرورگر شما از قابلیت تبدیل گفتار پشتیبانی نمی‌کند.",
         variant: "destructive",
       })
       return false
@@ -103,57 +169,71 @@ export default function Home() {
 
     try {
       const recognition = new SpeechRecognition()
-      recognition.continuous = true
-      recognition.interimResults = true
+      recognition.continuous = true 
+      recognition.interimResults = true 
       recognition.lang = selectedLanguage
       
       recognition.onresult = (event: any) => {
-        let interimChunk = ''
-        let finalChunk = ''
+        let sessionFullText = ''
+        let sessionInterim = ''
+        let hasFinal = false
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i]
           const text = result[0].transcript
           
+          if (!text || text.trim() === '') continue
+          
           if (result.isFinal) {
-            finalChunk += text
+            sessionFullText += text
+            hasFinal = true
           } else {
-            interimChunk += text
+            sessionInterim += text
           }
         }
         
-        if (finalChunk) {
-          setTranscription(prev => {
-            const newText = (prev + ' ' + finalChunk).trim()
-            return newText
-          })
-          setLiveTranscription('')
-        } 
-        else if (interimChunk) {
-          setLiveTranscription(interimChunk)
+        currentSessionTextRef.current = sessionFullText
+        
+        const totalDisplay = (historyTranscriptRef.current + ' ' + sessionFullText).replace(/\s+/g, ' ').trim()
+        setTranscription(totalDisplay)
+        setLiveTranscription(sessionInterim)
+        
+        setEditedText((totalDisplay + ' ' + sessionInterim).trim())
+
+        if (hasFinal) {
+            recognition.stop()
         }
       }
       
       recognition.onerror = (event: any) => {
-        if (event.error === 'no-speech') return 
+        if (event.error === 'no-speech' || event.error === 'network') return 
         
         if (event.error === 'not-allowed') {
-            setIsRecording(false)
+            stopRecordingInternal()
             toast({
                 title: "دسترسی میکروفون مسدود است",
-                description: "لطفاً دسترسی مرورگر به میکروفون را بررسی کنید.",
+                description: "لطفاً دسترسی مرورگر را بررسی کنید.",
                 variant: "destructive"
             })
         }
       }
       
       recognition.onend = () => {
-        if (isRecording) {
-            try {
-                recognition.start()
-            } catch (e) {
-                setIsRecording(false)
+        if (isRecordingRef.current) {
+            if (currentSessionTextRef.current) {
+                historyTranscriptRef.current = (historyTranscriptRef.current + ' ' + currentSessionTextRef.current).trim()
+                currentSessionTextRef.current = ''
             }
+            
+            setTranscription(historyTranscriptRef.current)
+            setEditedText(historyTranscriptRef.current)
+            setLiveTranscription('')
+
+            setTimeout(() => {
+                if (isRecordingRef.current) {
+                    try { recognition.start() } catch(e){}
+                }
+            }, 100)
         }
       }
       
@@ -163,7 +243,7 @@ export default function Home() {
       console.error('Init error:', error)
       return false
     }
-  }
+  }, [selectedLanguage]) 
 
   const isIOS = () => {
     if (typeof window === 'undefined') return false;
@@ -171,23 +251,59 @@ export default function Home() {
            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
 
+  const stopRecordingInternal = () => {
+    setIsRecording(false)
+    isRecordingRef.current = false 
+    
+    if (watchdogTimerRef.current) {
+        clearInterval(watchdogTimerRef.current)
+        watchdogTimerRef.current = null
+    }
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop() } catch(e){}
+    }
+    
+    if (currentSessionTextRef.current) {
+        historyTranscriptRef.current = (historyTranscriptRef.current + ' ' + currentSessionTextRef.current).trim()
+    }
+    setTranscription(historyTranscriptRef.current)
+    setEditedText(historyTranscriptRef.current)
+    
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current = null;
+    }
+  }
+
   const startRecording = async () => {
     const supportsWebSpeech = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
     
+    if (!showResult) {
+       historyTranscriptRef.current = ''
+       currentSessionTextRef.current = ''
+       setTranscription('')
+       setLiveTranscription('')
+       setEditedText('')
+    }
+
     if (useWebSpeech && supportsWebSpeech && !isIOS()) {
       const initialized = initWebSpeech()
       if (initialized && recognitionRef.current) {
         try {
-          setLiveTranscription('')
-          recognitionRef.current.start()
+          isRecordingRef.current = true
           setIsRecording(true)
+          recognitionRef.current.start()
           setShowResult(true)
+          startWatchdog()
         } catch (error) {
-          setIsRecording(false)
+          stopRecordingInternal()
         }
       }
     } 
     else {
+      // Cloud API Logic
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
@@ -214,7 +330,10 @@ export default function Home() {
               body: formData,
             });
             const data = await response.json();
-            setTranscription(prev => prev + ' ' + data.text);
+            const newText = (editedText + ' ' + data.text).trim();
+            setTranscription(newText);
+            setEditedText(newText);
+            historyTranscriptRef.current = newText;
           } catch (err) {
             toast({ title: "خطا در ارتباط با سرور", variant: "destructive" });
           } finally {
@@ -223,6 +342,8 @@ export default function Home() {
         };
 
         mediaRecorder.start();
+        
+        isRecordingRef.current = true
         setIsRecording(true);
         toast({ title: "در حال ضبط برای پردازش در سرور..." });
 
@@ -233,15 +354,13 @@ export default function Home() {
   }
 
   const stopRecording = () => {
-    if (recognitionRef.current && isRecording && !mediaRecorderRef.current) {
-      recognitionRef.current.stop()
-      setIsRecording(false)
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      mediaRecorderRef.current = null;
-      setIsRecording(false);
+    stopRecordingInternal()
+  }
+
+  const handleDialogChange = (open: boolean) => {
+    setShowResult(open)
+    if (!open) {
+        stopRecording()
     }
   }
 
@@ -258,25 +377,6 @@ export default function Home() {
       toast({ title: "خطا در کپی", variant: "destructive" })
     }
   }
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 2000);
-    
-    if (typeof window !== 'undefined') {
-      const hasSupport = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window
-      const isHttps = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
-      setIsBrowserSupported(hasSupport && isHttps)
-      
-      if (!hasSupport) setUseWebSpeech(false)
-    }
-    
-    return () => {
-      clearTimeout(timer);
-      if (recognitionRef.current) recognitionRef.current.abort()
-    }
-  }, [])
 
   const LoadingScreen = () => (
     <motion.div 
@@ -330,7 +430,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 md:p-8 font-vazir text-foreground transition-colors duration-500">
-      {/* دکمه تغییر حالت شب/روز - نسخه نهایی و بدون خطا */}
+      
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -488,7 +588,7 @@ export default function Home() {
         </Button>
       </motion.div>
 
-      <Dialog open={showResult} onOpenChange={setShowResult}>
+      <Dialog open={showResult} onOpenChange={handleDialogChange}>
         <DialogContent className="sm:max-w-md md:max-w-lg lg:max-w-xl rounded-2xl shadow-2xl border-0 overflow-hidden bg-card">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -502,28 +602,27 @@ export default function Home() {
             <div className="mt-4 space-y-4">
               {isProcessing && <ProcessingAnimation />}
               
-              <div className="relative min-h-[220px] md:min-h-[280px] p-5 bg-muted rounded-2xl border border-border text-right shadow-inner" dir="rtl">
+              {/* 🟢 Fix Scroll Location: اسکرول سمت راست (dir=ltr) و متن راست‌چین (text-right) */}
+              <div className="relative h-[300px] md:h-[400px] p-5 bg-muted rounded-2xl border border-border shadow-inner overflow-hidden" dir="ltr">
+                <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-muted to-transparent z-10 pointer-events-none"></div>
+                
                 <Textarea
+                  ref={textareaRef}
                   value={editedText}
-                  onChange={(e) => setEditedText(e.target.value)}
-                  className="w-full h-full bg-transparent border-none text-foreground text-xl md:text-2xl leading-loose resize-none focus:outline-none scrollbar-thin scrollbar-thumb-muted-foreground/50 scrollbar-track-muted"
+                  onChange={handleManualEdit}
+                  dir="ltr" // جهت خود باکس چپ‌چین باشد تا اسکرول راست بماند
+                  className="w-full h-full bg-transparent border-none text-foreground text-xl md:text-2xl leading-loose resize-none focus:outline-none scrollbar-thin scrollbar-thumb-muted-foreground/50 scrollbar-track-muted text-right placeholder:text-right"
                   placeholder="متن اینجا ظاهر می‌شود..."
                 />
-                {isRecording && !liveTranscription && !isProcessing && (
-                  <motion.span
-                    animate={{ opacity: [1, 0, 1] }}
-                    transition={{ repeat: Infinity, duration: 0.8 }}
-                    className="absolute top-5 right-5 inline-block w-0.5 h-6 md:h-8 bg-primary"
-                  ></motion.span>
-                )}
               </div>
 
-              <div className="flex justify-end gap-3">
+              {/* 🟢 Fix Buttons: جهت کانتینر ltr باشد تا دکمه‌ها راست بروند */}
+              <div className="flex justify-end gap-3" dir="ltr">
                 <Button variant="outline" onClick={copyToClipboard} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 bg-card border-border text-foreground hover:bg-accent">
                   {copied ? <Check className="mr-2 h-5 w-5 text-green-500" /> : <Copy className="mr-2 h-5 w-5" />}
                   کپی متن
                 </Button>
-                <Button onClick={() => setShowResult(false)} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground">
+                <Button onClick={() => handleDialogChange(false)} className="rounded-full px-6 py-3 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground">
                   بستن
                 </Button>
               </div>
@@ -561,9 +660,10 @@ export default function Home() {
                   </Button>
                 ))}
               </div>
-
+              
               <AnimatePresence mode="wait">
-                {selectedPlatform === 'ios' && (
+                 {/* ... بخش‌های راهنما طبق کد اصلی ... */}
+                 {selectedPlatform === 'ios' && (
                   <motion.div
                     key="ios"
                     initial={{ opacity: 0, x: 20 }}
